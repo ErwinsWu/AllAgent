@@ -2,7 +2,7 @@
 
 > **测试环境说明**:
 > *   **架构**: OpenClaw (Router) + Celery (Async) + Milvus (Vector DB)
-> *   **模型**: GPT-4o (Vision/Complex) + GPT-4o-mini (Chat/Router)
+> *   **模型**: 百炼Coding Plan
 
 ## 1. 核心路由与仲裁机制测试 (Router & Arbitration)
 **测试目标**: 验证 OpenClaw 是否能精准分发意图，特别是在知识冲突时的优先级逻辑。
