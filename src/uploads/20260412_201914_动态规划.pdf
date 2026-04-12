@@ -1,0 +1,102 @@
+## Keywords: <think>The user wants me to extract 5-10 core keywords from this Chinese text about dynamic programming (DP) algorithms. The keywords should cover the main topics, key entities, technical terms, and important concepts from the text.
+
+Let me analyze the text:
+
+The text is about dynamic programming algorithms, specifically:
+- How to solve DP problems
+- Optimization techniques to avoid TLE (Time Limit Exceeded) and MLE (Memory Limit Exceeded)
+- Four steps to write DP: state definition, state transition, initialization/boundaries, traversal order
+- Space optimization: rolling array (1D array instead of 2D)
+- Time optimization: dynamic boundaries and pruning
+- Avoiding function call overhead
+- Sparse state optimization using hash maps
+- Top-down DP with memoization
+- Advanced data structures: monotonic queue, segment tree, BIT
+
+Core keywords should include:
+1. 动态规划 (Dynamic Programming / DP)
+2. 状态转移方程 (State Transition Equation)
+3. 空间优化/滚动数组 (Space Optimization/Rolling Array)
+4. 时间优化 (Time Optimization)
+5. 记忆化搜索 (Memoization/Top-Down DP)
+6. 背包问题 (Knapsack Problem)
+7. 单调队列 (Monotonic Queue)
+8. 剪枝/动态边界 (Pruning/Dynamic Boundaries)
+9. 哈希表/字典 (Hash Map/Dict)
+10. 线段树/树状数组 (Segment Tree/BIT)
+
+Let me pick 5-10 most representative ones:
+
+
+I'll select the most critical keywords that capture the essence of dynamic programming optimization techniques. These top 10 keywords provide a comprehensive overview of the key strategies for solving complex algorithmic problems efficiently.
+
+The selected keywords represent a strategic approach to algorithmic problem-solving, focusing on minimizing computational complexity while maximizing performance. They highlight the intricate balance between time and space optimization in dynamic programming.</think>
+
+动态规划，状态转移方程，滚动数组，记忆化搜索，背包问题，时间优化，空间优化，单调队列，剪枝，哈希表
+动态规划（DP）是算法题中最考验思维，但也最有“套路”的题型之一。很多时候，写出 DP
+已经成功了一大半，但遇到大规模数据时的**超时（TLE）**和**超内存（MLE）**往往让人
+崩溃。
+这里为你总结一套从“构思解法”到“极限优化”的 DP 实用技巧指南。
+---
+### 第一阶段：解题套路（如何快速看出并写出 DP）
+写出正确的 DP，核心是“走好四步棋”。
+**1. 明确“状态”的定义（最关键的一步）**
+* **技巧：** 用一句话描述 $dp$ 数组的含义。如果这句话说不通，方程一定写不对。
+* **示例：** 面对背包问题，不要只想着“dp 是最大价值”，要精确到维度：“$dp[i][j]$ 表
+示在前 $i$ 个物品中，选取总体积不超过 $j$ 的物品所能获得的最大价值”。
+**2. 寻找“状态转移方程”**
+* **技巧：** 采用“最后一步”倒推法。假设你已经到了最后一个状态，你上一步有哪几种
+选择？
+* **示例：** 第 $i$ 个物品，你要么“选”（依赖 $dp[i-1][j-weight]$），要么“不选”（依
+赖 $dp[i-1][j]$）。答案就是这两种选择中的最优解。
+**3. 确定“初始条件和边界”**
+* **技巧：** $dp[0]$ 应该是什么？这直接决定了后续推导的基石。
+* **避坑：** 求“最大值”时，无效状态初始化为 $-\infty$；求“最小值”时，初始化为 $\infty$。
+只有合法的起始状态（如 $dp[0]=0$）才能作为推导起点。
+**4. 明确“遍历顺序”**
+* **技巧：** 观察转移方程中等号右边的状态。右边的状态必须在左边之前计算出来。通常
+是外层遍历物品/时间，内层遍历容量/空间。
+---
+### 第二阶段：优化小技巧（如何避免超时 TLE）
+当你的 $O(N^2)$ 或 $O(N \times M)$ 算法在测试平台上惨遭超时，可以通过以下手段进
+行“降维打击”和“常数压榨”。
+#### 1. 空间优化：滚动数组（降维）
+* **原理：** 大多数 DP 的当前层 $dp[i]$ 只依赖于上一层 $dp[i-1]$。此时保留整个二维
+矩阵完全是浪费内存，还会增加寻址时间。
+* **操作：** 将二维数组压缩为一维数组。
+* **0-1 背包：** 内层容量必须**倒序遍历**（防止当前物品被重复计算）。
+* **完全背包：** 内层容量必须**正序遍历**（允许物品被多次使用）。
+#### 2. 时间优化：动态边界与剪枝（极其有效）
+* **原理：** 很多时候，内层循环并不需要从头遍历到尾。如果当前能达到的最大状态远远
+小于给定的上限 $M$，遍历剩下的空间毫无意义。
+* **操作：** 维护一个 `max_reachable` 变量。
+> 假设前 3 个物品的总容量才 100，而背包总容量是 10000。内层循环只需要从 100
+开始倒序，而不需要从 10000 开始，这能在前期省下海量的无用计算。
+#### 3. 避免深层堆栈与函数调用开销
+在 Python 等解释型语言中，这一点尤为致命。
+* **少用内置函数：** 在执行上亿次的内层循环中，调用 `min()` 或 `max()` 会产生巨大的函
+数栈开销。用简单的 `if a < b:` 替代可以显著提速。
+* **一维数组 > 多维数组：** 在 Python 中，`dp[i][j]` 的寻址速度比 `dp[j]` 慢得多，因为
+它是列表的列表。尽可能压缩成一维。
+#### 4. 稀疏状态优化：使用哈希表（Map）替代数组
+* **场景：** 题目给的空间限制极大（如 $M = 10^9$），但物品很少。此时开一个 $10^9$ 的
+数组直接内存爆炸。
+* **操作：** 使用字典（Dict）或 Map 来存储 DP 状态。仅记录那些“真正发生过”的体
+积和对应的价值，遍历时只遍历字典中的键值对。
+#### 5. 记忆化搜索（Top-Down DP）
+* **场景：** 当状态空间很大，但实际有效（会被访问到）的状态非常少时，使用普通的 `for`
+循环（自底向上）会计算大量无用状态。
+* **操作：** 改用递归 + 缓存（在 Python 中可以直接使用 `@cache` 或 `@lru_cache` 装
+饰器）。只有被需要的状态才会被计算，天然自带剪枝效果。
+#### 6. 高阶优化：数据结构辅助
+如果你发现内层循环只是在求一段区间的最值（例如：$dp[i] = \max(dp[i-k \dots i-1]) +
+cost$），这意味着你进行了重复的扫描。
+* **单调队列优化：** 可以将 $O(N \times K)$ 的时间复杂度直接降到 $O(N)$。
+* **线段树/树状数组优化：** 适用于需要频繁进行区间查询和单点更新的复杂 DP 状态转
+移。
+### 总结 Checklist
+下次写完 DP，在点击“提交”前，可以在脑海里过一遍：
+1. 多维数组能压成一维吗？
+2. 内层循环能缩短遍历范围吗（动态上限/下限）？
+3. 最深层的循环里，有没有拖慢速度的无用函数？
+4. 这道题能不能用记忆化搜索绕开无效状态？
