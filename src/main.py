@@ -1,8 +1,12 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, UploadFile, File, Form
 from pydantic import BaseModel
 from utils.load import load_model_client, Provider
+from pypdf import PdfReader
 import re
 import json
+import io
+import os
+from datetime import datetime
 
 app = FastAPI(title="大模型客户端 API", description="使用 FastAPI 提供大模型问答服务")
 
@@ -87,6 +91,10 @@ BLOCKER_ANALYSIS_SYSTEM_PROMPT = """你是一位资深的 B2B 大客户销售与
 }
 
 请确保返回有效的 JSON 格式。不要遗漏任何在对话中出现的关键施压信号或隐晦的商业威胁。"""
+
+KEYWORD_EXTRACTION_PROMPT = """从以下文本中提取 5-10 个核心关键词，用逗号分隔返回，不要返回其他任何内容。关键词应涵盖文本中的核心主题、关键实体、技术术语和重要概念。"""
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 
 def extract_think_content(text: str) -> tuple:
     """
@@ -197,18 +205,22 @@ async def analyze_customer_profile(request: CRMProfileRequest, include_think: bo
         
         # 提取思考内容
         think_content, main_content = extract_think_content(answer)
-        
+
+        # 剥离 markdown 代码块包裹 (```json ... ``` 或 ``` ... ```)
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', main_content.strip())
+        cleaned = re.sub(r'\n?```\s*$', '', cleaned.strip())
+
         # 尝试解析 JSON
         try:
             # 提取 JSON 内容（可能被其他文本包围）
-            json_match = re.search(r'\{.*\}', main_content, re.DOTALL)
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
             if json_match:
                 profile_data = json.loads(json_match.group())
             else:
                 # 如果没有找到 JSON，返回原始内容
-                profile_data = {"raw_analysis": main_content}
+                profile_data = {"raw_analysis": cleaned}
         except json.JSONDecodeError:
-            profile_data = {"raw_analysis": main_content}
+            profile_data = {"raw_analysis": cleaned}
         
         # 构建返回数据
         response_data = {"customer_profile": profile_data}
@@ -221,16 +233,23 @@ async def analyze_customer_profile(request: CRMProfileRequest, include_think: bo
 
 
 @app.post("/analyze-blockers", summary="分析业务沟通中的卡点与维系策略", response_model=BaseResponse)
-async def analyze_blockers(request: CommunicationRecordRequest, include_think: bool = Query(False)):
+async def analyze_blockers(
+    communication_record: str = Form(..., description="业务跟进沟通记录内容"),
+    include_think: bool = Form(False, description="是否返回模型的思考内容")
+):
     """
     根据业务跟进沟通记录，分析当前技术/商业卡点，并给出客户维系策略。
 
-    - **communication_record**: 业务跟进沟通记录内容
+    - **communication_record**: 业务跟进沟通记录内容（支持多行文本）
     - **include_think**: 是否返回模型的思考内容 (默认: false)
 
     返回结果为 JSON 格式，包含卡点分析和维系策略。
     """
-    question = f"请分析以下业务跟进沟通记录：\n{request.communication_record}"
+    record_text = communication_record
+    if not record_text.strip():
+        return BaseResponse(code=400, msg="communication_record 不能为空", data={})
+
+    question = f"请分析以下业务跟进沟通记录：\n{record_text}"
 
     try:
         client = load_model_client(PROVIDER, MODEL_NAME)
@@ -238,14 +257,18 @@ async def analyze_blockers(request: CommunicationRecordRequest, include_think: b
 
         think_content, main_content = extract_think_content(answer)
 
+        # 剥离 markdown 代码块包裹 (```json ... ``` 或 ``` ... ```)
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', main_content.strip())
+        cleaned = re.sub(r'\n?```\s*$', '', cleaned.strip())
+
         try:
-            json_match = re.search(r'\{.*\}', main_content, re.DOTALL)
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
             if json_match:
                 analysis_data = json.loads(json_match.group())
             else:
-                analysis_data = {"raw_analysis": main_content}
+                analysis_data = {"raw_analysis": cleaned}
         except json.JSONDecodeError:
-            analysis_data = {"raw_analysis": main_content}
+            analysis_data = {"raw_analysis": cleaned}
 
         response_data = {"blockers_analysis": analysis_data}
         if include_think and think_content:
@@ -254,6 +277,68 @@ async def analyze_blockers(request: CommunicationRecordRequest, include_think: b
         return BaseResponse(code=200, msg="success", data=response_data)
     except Exception as e:
         return BaseResponse(code=500, msg=f"请求失败: {str(e)}", data={})
+
+
+@app.post("/upload", summary="上传文件并提取关键词", response_model=BaseResponse)
+async def upload_file(
+    file: UploadFile = File(...),
+    verbose: bool = Query(False, description="是否在终端输出解析原文")
+):
+    """
+    上传 txt 或 pdf 文件，解析原文内容，提取关键词并保存至服务器。
+
+    - **file**: 上传的文件（支持 .txt 和 .pdf 格式）
+    - **verbose**: 是否在终端输出解析后的原文内容 (默认: false)
+    """
+    try:
+        # 读取文件内容
+        file_bytes = await file.read()
+        filename = file.filename or "unknown"
+        ext = os.path.splitext(filename)[1].lower()
+
+        # 根据文件类型解析文本
+        if ext == ".txt":
+            text = file_bytes.decode("utf-8")
+        elif ext == ".pdf":
+            pdf_reader = PdfReader(io.BytesIO(file_bytes))
+            text = "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
+        else:
+            return BaseResponse(code=400, msg=f"不支持的文件格式: {ext}，仅支持 .txt 和 .pdf", data={})
+
+        if not text.strip():
+            return BaseResponse(code=400, msg="文件内容为空，无法解析", data={})
+
+        # verbose 模式下在终端输出原文
+        if verbose:
+            print(f"\n{'='*60}")
+            print(f"[UPLOAD] 文件: {filename}")
+            print(f"{'='*60}")
+            print(text)
+            print(f"{'='*60}\n")
+
+        # 调用大模型提取关键词
+        client = load_model_client(PROVIDER, MODEL_NAME)
+        raw_answer = client.ask_with_system(KEYWORD_EXTRACTION_PROMPT, text)
+        _, keywords = extract_think_content(raw_answer)
+        keywords = keywords.strip()
+
+        # 生成带时间戳的文件名并保存
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        saved_filename = f"{timestamp}_{filename}"
+        saved_path = os.path.join(UPLOAD_DIR, saved_filename)
+
+        with open(saved_path, "w", encoding="utf-8") as f:
+            f.write(f"## Keywords: {keywords}\n")
+            f.write(text)
+
+        return BaseResponse(code=200, msg="success", data={
+            "filename": saved_filename,
+            "keywords": keywords,
+            "char_count": len(text)
+        })
+    except Exception as e:
+        return BaseResponse(code=500, msg=f"文件上传失败: {str(e)}", data={})
 
 
 if __name__ == "__main__":
